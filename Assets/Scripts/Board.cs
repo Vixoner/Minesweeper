@@ -55,7 +55,7 @@ public class Board : MonoBehaviour
         switch(cell.type)
         {
             case Cell.Type.Empty: return tileEmpty;
-            case Cell.Type.Bomb: return tileMine;
+            case Cell.Type.Bomb: return cell.exploded ? tileExploded : tileMine;
             case Cell.Type.Number: return GetNumberTile(cell);
             default: return null;
         }
@@ -75,5 +75,10 @@ public class Board : MonoBehaviour
             case 8: return tileNumber8;
             default: return null;
         }
+    }
+
+    public void ClearBoard()
+    {
+        tilemap.ClearAllTiles();
     }
 }

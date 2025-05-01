@@ -1,13 +1,25 @@
 using UnityEngine;
+using TMPro;
+using UnityEngine.UI;
 
 public class Game : MonoBehaviour
 {
-    public int width = 16;
-    public int height = 16;
-    public int bombAmount = 50;
+    public int width = 10;
+    public int height = 10;
+    public int bombAmount = 20;
+    public TMP_Text bombCounterText;
+    public TMP_Text winText;
+    private int remainingBombs;
 
     private Board board;
     private Cell[,] state;
+    private bool alive;
+    private bool gameStarted = false;
+
+    public GameObject setupPanel;
+    public TMP_InputField widthInput;
+    public TMP_InputField heightInput;
+    public Button startButton;
 
     private void Awake()
     {
@@ -16,12 +28,52 @@ public class Game : MonoBehaviour
 
     private void Start() 
     {
+        widthInput.text = width.ToString();
+        heightInput.text = height.ToString();
+        
+        startButton.onClick.AddListener(StartGameFromSetup);
+        
+        setupPanel.SetActive(true);
+        
+        board.gameObject.SetActive(false);
+
+        bombCounterText.gameObject.SetActive(false);
+        winText.gameObject.SetActive(false);
+    }
+
+    public void StartGameFromSetup()
+    {
+        if (!int.TryParse(widthInput.text, out width))
+        {
+            width = 10;
+        }
+        
+        if (!int.TryParse(heightInput.text, out height))
+        {
+            height = 10;
+        }
+        
+        width = Mathf.Clamp(width, 5, 15);
+        height = Mathf.Clamp(height, 5, 15);
+        bombAmount = (width * height) / 8;
+
+        setupPanel.SetActive(false);
+        
+        board.gameObject.SetActive(true);
+        
+        bombCounterText.gameObject.SetActive(true);
+
+        gameStarted = true;
         NewGame();
     }
 
     private void NewGame()
     {
+        board.ClearBoard();
         state = new Cell[width, height];
+        alive = true;
+        remainingBombs = bombAmount;
+        UpdateBombCounter();
         GenerateCells();
         GenerateBombs();
         GenerateNumbers();
@@ -101,10 +153,28 @@ public class Game : MonoBehaviour
 
     private void Update()
     {
-        if (Input.GetMouseButtonDown(1))
-            Flag();
-        else if (Input.GetMouseButtonDown(0))
-            click();
+        if (Input.GetKeyDown(KeyCode.R))
+        {
+            setupPanel.SetActive(true);
+        
+            board.gameObject.SetActive(false);
+            
+            gameStarted = false;
+
+            bombCounterText.gameObject.SetActive(false);
+            winText.gameObject.SetActive(false);
+
+            Debug.Log("Game restarted.");
+        }
+
+        if (gameStarted && alive)
+        {
+            if (Input.GetMouseButtonDown(1))
+                Flag();
+            else if (Input.GetMouseButtonDown(0))
+                click();
+        }
+        
     }
 
     private void Flag()
@@ -118,6 +188,17 @@ public class Game : MonoBehaviour
 
         if (cell.clicked)
             return;
+
+        if (!cell.flagged)
+        {
+            remainingBombs--;
+        }
+        else
+        {
+            remainingBombs++;
+        }
+
+        UpdateBombCounter();
 
         cell.flagged = !cell.flagged;
         state[cellPosition.x, cellPosition.y] = cell;
@@ -138,8 +219,17 @@ public class Game : MonoBehaviour
 
         cell.clicked = true;
         state[cellPosition.x, cellPosition.y] = cell;
-        if (cell.type == Cell.Type.Empty && cell.value == 0)
+
+        // Flooding
+        if (cell.type == Cell.Type.Empty)
             ClickAround(cellPosition.x, cellPosition.y);
+
+        // GG
+        if (cell.type == Cell.Type.Bomb)
+            Explode(cell);
+            
+        CheckForWin();
+
         board.Draw(state);
     }
 
@@ -152,10 +242,94 @@ public class Game : MonoBehaviour
                 if ((i < 0 || i >= width) || (j < 0 || j >= height) || state[i, j].clicked == true)
                     continue;
 
+                if (state[i, j].flagged)
+                {
+                    remainingBombs++;
+                    state[i, j].flagged = false;
+                    UpdateBombCounter();
+                }
+
                 state[i, j].clicked = true;
-                if (state[i, j].type == Cell.Type.Empty && state[i, j].value == 0)
+                if (state[i, j].type == Cell.Type.Empty)
                     ClickAround(i, j);
             }
         }
+    }
+
+    private void Explode(Cell cell)
+    {
+        alive = false;
+        cell.exploded = true;
+        state[cell.position.x, cell.position.y] = cell;
+
+        // Reveal all mines
+        for (int i = 0; i < width; i++)
+        {
+            for (int j = 0; j < height; j++)
+            {
+                if (state[i, j].type == Cell.Type.Bomb)
+                {
+                    state[i, j].clicked = true;
+                }
+            }
+        }
+
+        Debug.Log("Game Over!");
+
+        Invoke("ShowSetupPanelDelayed", 2f);
+    }
+
+    private void ShowSetupPanelDelayed()
+    {
+        setupPanel.SetActive(true);
+        
+        board.gameObject.SetActive(false);
+        
+        gameStarted = false;
+
+        bombCounterText.gameObject.SetActive(false);
+        winText.gameObject.SetActive(false);
+    }
+
+    private void CheckForWin()
+    {
+        for (int i = 0; i < width; i++)
+        {
+            for (int j = 0; j < height; j++)
+            {
+                if (state[i, j].type != Cell.Type.Bomb && !state[i, j].clicked)
+                {
+                    return;
+                }
+            }
+        }
+
+        alive = false;
+
+        // Flag all mines
+        for (int i = 0; i < width; i++)
+        {
+            for (int j = 0; j < height; j++)
+            {
+                if (state[i, j].type == Cell.Type.Bomb)
+                {
+                    state[i, j].flagged = true;
+                }
+            }
+        }
+
+        remainingBombs = 0;
+        UpdateBombCounter();
+
+        Debug.Log("You win!");
+
+        winText.gameObject.SetActive(true);
+
+        Invoke("ShowSetupPanelDelayed", 5f);
+    }
+
+    public void UpdateBombCounter()
+    {
+        bombCounterText.text = "Mines: " + remainingBombs;
     }
 }
